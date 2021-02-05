@@ -29,7 +29,7 @@
 #:<COPYRIGHT & LICENSE
 #:<-------------------
 #:
-#: Copyright 2020 by David C Black.
+#: Copyright 2020-2021 by David C Black.
 #: This file is open-source and licensed under Apache 2.0.
 #:
 
@@ -40,6 +40,9 @@ ifndef SYSTEMC_HOME
     SYSTEMC_HOME := ${SYSTEMC}
   else
     SYSTEMC_HOME := /apps/systemc
+    ifeq "${IDE}" "CLION"
+      SYSTEMC_HOME := $(wildcard $(realpath "${HOME}/systemc"))
+    endif
   endif
 endif
 
@@ -84,7 +87,11 @@ ANLD   ?= ${BDIR}/analysis.dir
 # Sub-directory to place outputs from compilation (primarily object files)
 OBJD   ?= ${BDIR}/obj.dir
 # Sub-directory to contain copies of all source files under Docker
+ifeq "${IDE}" "CLION"
+SRCS   ?= .
+else
 SRCD   ?= ${BDIR}/src.dir
+endif
 # Sub-directory to place log file (reporting) outputs from all steps
 LOGD   ?= ${BDIR}/log.dir
 # Sub-directory to place executable in
@@ -217,7 +224,7 @@ ifneq "$(call SRCS_has,include.tlm systemc sc_core sc_dt sc_main SC_MODULE tlm_u
   # SystemC
   MNRE := int.sc_main
   ifeq "$(wildcard ${SYSTEMC_HOME}/include)" ""
-    $(error SYSTEMC_HOME is not properly defined.")
+    $(error SYSTEMC_HOME='${SYSTEMC_HOME}' is not properly defined.")
   endif
   SYSC := 1
   SLIB := $(firstword $(wildcard ${SYSTEMC_HOME}/lib-${TARGET_ARCH} ${SYSTEMC_HOME}/lib))
@@ -357,10 +364,19 @@ objs: ${OBJS} # Compile all object files
 ${OBJS}: | ${OBJD} ${LNKS}
 
 ${LNKS}: ${SRCD} ${SRCS}
+ifneq "${SRCD}","."
 	@for F in $(foreach F,${SRCS},$(realpath $F)); do T=${SRCD}/$$(basename $$F); rsync -au $$F $$T; done
+else
+	@function realpath() { perl '-MCwd(abs_path)' -le "print abs_path(qq($*))";};\
+        for F in $(foreach F,${SRCS},$(realpath $F)); do T=${SRCD}/$$(basename $$F); if [[ "$$(realpath $$F)" != "$$(realpath $$T)" ]]; then ln -s $$F $$T; fi done
+endif
 
 ${SRCD}:
+ifneq "${SRCD}","."
 	@-rm -fr ${SRCD}; mkdir -p "${SRCD}"
+else
+	@-NOP='ignore'
+endif
 
 ${LOGD}:
 	@mkdir -p "${LOGD}"; echo "INFO(${WD}): % ${MAKE} $(addprefix -,${MAKEFLAGS}) ${MAKECMDGOALS} ${MAKEOVERRIDES}" >${LOGD}/make.log
@@ -530,6 +546,7 @@ endif
 	@perl -le 'print q{-} x 80;' ; echo "\n${NONE}"
 
 help: # Provides a bit more information
+	# Search >this< makefile for targets consisting of a simple name (no extensions) and grab the text following the comment 
 	@echo -n "${CRED}"; perl -le 'print q{-} x 80;' ; echo "${NONE}";\
          perl -lne 'if(m{^#:}){s{^#:<}{};s{^#:}{};s{^ }{  };print;}END{print q{};}' ${MAKEFILE_RULES}; \
 	 make -s -f ${MAKEFILE_RULES} -s targets; \
@@ -541,6 +558,9 @@ ifneq "$(wildcard solution/.)" ""
 else
 	@echo "ERROR: There does not appear to be a solution/ directory here."
 endif
+
+show:
+	@echo "PHONIES=${PHONIES}"
 
 targets: # Lists targets and brief description
 	@echo "TARGETS" ; echo "-------"; echo ""; \
